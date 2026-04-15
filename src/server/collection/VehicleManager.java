@@ -91,19 +91,21 @@ public class VehicleManager {
     }
 
     public void addElement(Vehicle vehicle) {
+        setID(vehicle);
         collection.add(vehicle);
     }
 
     public boolean addIfMax(Vehicle veh) {
         if (collection.getVehicles().stream().allMatch(v ->
                 v.getDistanceTravelled() < veh.getDistanceTravelled())) {
+            setID(veh);
             collection.add(veh);
             return true;
         }
         return false;
     }
 
-    // ← groupByParam возвращает результат, а не печатает
+    // groupByParam возвращает результат, а не печатает
     public Map<Comparable<?>, Long> groupByParam(List<String> args) {
         ValidateParams validator = new ValidateParams(args);
         GroupingField field = validator.getGroupingField();
@@ -131,6 +133,14 @@ public class VehicleManager {
         ArrayList<Vehicle> vehicles = collection.getVehicles();
         Collections.shuffle(vehicles);
         return vehicles;
+    }
+
+    private void setID(Vehicle vehicle){
+        long maxId = collection.getVehicles().stream()
+                .mapToLong(Vehicle::getId)
+                .max()
+                .orElse(0);
+        vehicle.setId(maxId + 1);
     }
 
 

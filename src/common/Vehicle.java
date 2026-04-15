@@ -7,7 +7,6 @@ import java.util.Date;
 
 
 public class Vehicle implements Serializable {
-    private static long currentId = 1;
 
     private long id;
     private String name;
@@ -19,7 +18,6 @@ public class Vehicle implements Serializable {
     private FuelType fuelType;
 
     public Vehicle() {
-        this.id = currentId++;
         this.creationDate = new java.util.Date();
     }
 
