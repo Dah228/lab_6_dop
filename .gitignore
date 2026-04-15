@@ -4,6 +4,12 @@ out/
 !**/src/test/**/out/
 .kotlin
 
+
+# Приватные ключи (НИКОГДА не отправлять в репозиторий!)
+keys/**/*.private.pem
+keys/*.private.pem
+
+
 ### Eclipse ###
 .apt_generated
 .classpath

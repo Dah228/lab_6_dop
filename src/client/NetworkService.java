@@ -2,6 +2,7 @@ package client;
 
 import common.CommandRequest;
 import common.CommandResponse;
+import common.SecureSerializer;
 import common.Serializer;
 
 import java.io.IOException;
@@ -19,6 +20,10 @@ public class NetworkService {
         this.port = port;
     }
 
+    private SecureSerializer secureSerializer; // null до завершения рукопожатия
+
+
+
     public boolean connect() {
         try {
             channel = SocketChannel.open();
@@ -33,26 +38,50 @@ public class NetworkService {
         }
     }
 
+    public void sendRaw(Object obj) throws Exception {
+        byte[] data = Serializer.serialize(obj);
+        ByteBuffer sizeBuf = ByteBuffer.allocate(4).putInt(data.length);
+        sizeBuf.flip();
+        channel.write(sizeBuf);
+        channel.write(ByteBuffer.wrap(data));
+    }
+
+    public Object receiveRaw() throws Exception {
+        ByteBuffer sizeBuf = ByteBuffer.allocate(4);
+        while (sizeBuf.hasRemaining()) channel.read(sizeBuf);
+        sizeBuf.flip();
+        int len = sizeBuf.getInt();
+        ByteBuffer dataBuf = ByteBuffer.allocate(len);
+        while (dataBuf.hasRemaining()) channel.read(dataBuf);
+        return Serializer.deserialize(dataBuf.array());
+    }
+
+    private byte[] sessionKey;
+//    public void setSessionKey(byte[] key) { this.sessionKey = key; }
+    public byte[] getSessionKey() { return sessionKey; }
+
     public boolean send(CommandRequest request) {
         try {
-            byte[] data = Serializer.serialize(request);
+            byte[] payload;
 
-            // Отправляем размер данных (4 байта) + сами данные
+            // Если рукопожатие завершено — шифруем, иначе отправляем как есть
+            if (secureSerializer != null) {
+                payload = secureSerializer.encryptAndSerialize(request);
+            } else {
+                payload = common.Serializer.serialize(request);
+            }
+
+            // Отправляем: 4 байта размер + payload
             ByteBuffer sizeBuffer = ByteBuffer.allocate(4);
-            sizeBuffer.putInt(data.length);
+            sizeBuffer.putInt(payload.length);
             sizeBuffer.flip();
+            while (sizeBuffer.hasRemaining()) channel.write(sizeBuffer);
 
-            while (sizeBuffer.hasRemaining()) {
-                channel.write(sizeBuffer);
-            }
-
-            ByteBuffer buffer = ByteBuffer.wrap(data);
-            while (buffer.hasRemaining()) {
-                channel.write(buffer);
-            }
+            ByteBuffer buffer = ByteBuffer.wrap(payload);
+            while (buffer.hasRemaining()) channel.write(buffer);
 
             return true;
-        } catch (IOException e) {
+        } catch (Exception e) {
             System.out.println("Ошибка отправки: " + e.getMessage());
             return false;
         }
@@ -60,35 +89,39 @@ public class NetworkService {
 
     public CommandResponse receive() {
         try {
-            // Читаем размер ответа (4 байта)
+            // Читаем размер (4 байта)
             ByteBuffer sizeBuffer = ByteBuffer.allocate(4);
-
             while (sizeBuffer.hasRemaining()) {
                 if (channel.read(sizeBuffer) == -1) {
                     System.out.println("Сервер закрыл соединение");
                     return null;
                 }
             }
-
             sizeBuffer.flip();
             int dataSize = sizeBuffer.getInt();
 
-            // Читаем данные
+            // Читаем payload
             ByteBuffer dataBuffer = ByteBuffer.allocate(dataSize);
             while (dataBuffer.hasRemaining()) {
                 if (channel.read(dataBuffer) == -1) {
-                    System.out.println("Сервер закрыл соединение при чтении данных");
+                    System.out.println("Сервер закрыл соединение при чтении");
                     return null;
                 }
             }
-
             dataBuffer.flip();
             byte[] data = new byte[dataSize];
             dataBuffer.get(data);
 
-            return (CommandResponse) Serializer.deserialize(data);
+            // Расшифровываем, если включено шифрование
+            Object obj;
+            if (secureSerializer != null) {
+                obj = secureSerializer.decryptAndDeserialize(data);
+            } else {
+                obj = common.Serializer.deserialize(data);
+            }
 
-        } catch (IOException | ClassNotFoundException e) {
+            return (CommandResponse) obj;
+        } catch (Exception e) {
             System.out.println("Ошибка получения ответа: " + e.getMessage());
             return null;
         }
@@ -108,4 +141,13 @@ public class NetworkService {
     public boolean isConnected() {
         return channel != null && channel.isOpen() && channel.isConnected();
     }
+
+    public void setSessionKey(byte[] key) {
+        if (key != null && key.length == 32) {
+            this.secureSerializer = new SecureSerializer(key);
+            System.out.println("AES-GCM шифрование включено");
+        }
+    }
+
+
 }
